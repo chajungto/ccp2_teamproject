@@ -1,11 +1,13 @@
 ﻿using ExitGames.Client.Photon;
+using Mono.Cecil.Cil;
 using Photon.Pun;
 using Photon.Realtime;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-[RequireComponent (typeof(MultiRoomUI))]
+[RequireComponent(typeof(MultiRoomUI))]
 public class MultiRoomManager : MonoBehaviourPunCallbacks
 {
     [Header("참조 스크립트")]
@@ -17,8 +19,28 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
 
     // 방 리스트
     private Dictionary<string, RoomInfo> cachedRoomList;
+    //방 찾기 실패 메세지
+    public TextMeshProUGUI messageText;
+    [SerializeField]
+    private TMP_InputField searchCodeField;
 
     public void OnClickMultiPlay()
+    {
+        if (PhotonNetwork.IsConnected == false)
+        {
+            // 서버 연결
+            photonManager.ConnectServer();
+            ui.SetActiveRoomList(true);
+        }
+        else
+        {
+            // 이미 서버에 접속되어 있으면 로비 바로 입장
+            PhotonNetwork.JoinLobby();
+            ui.SetActiveRoomList(true);
+        }
+    }
+
+    public void OnClickRoomCode()
     {
         if (PhotonNetwork.IsConnected == false)
         {
@@ -29,14 +51,15 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
         {
             // 이미 서버에 접속되어 있으면 로비 바로 입장
             PhotonNetwork.JoinLobby();
+            ui.SetActiveRoomList(false);
         }
     }
-
+    /*
     public override void OnJoinedLobby()
     {
         // 로비에 있을 때에만 방 목록 보이기
         ui.SetActiveRoomList(true);
-    }
+    }*/
 
     public void OnExit()
     {
@@ -69,13 +92,12 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
         // 기본 오브젝트 삭제
         ui.RemoveAllRooms();
 
-        foreach (RoomInfo room in roomList)
-        {
-            ui.AddRoomObj(room, (id, roomPassword) => OnEnterRoom(id, roomPassword));
-        }
-
         // 캐시에 방 목록 업데이트
         UpdateCachedRoomList(roomList);
+
+        // 방 목록 생성
+        List<RoomInfo> createRoomList = new List<RoomInfo>(cachedRoomList.Values);
+        CreateRoomList(createRoomList);
     }
 
     private void UpdateCachedRoomList(List<RoomInfo> roomList)
@@ -83,9 +105,9 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
         if (cachedRoomList == null)
             cachedRoomList = new Dictionary<string, RoomInfo>();
 
-        foreach(RoomInfo room in roomList)
+        foreach (RoomInfo room in roomList)
         {
-            string title = (string)room.CustomProperties["RoomName"];
+            string title = room.Name;
 
             if (room.RemovedFromList)
             {
@@ -99,12 +121,30 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
         }
     }
 
+    private void CreateRoomList(List<RoomInfo> roomList)
+    {
+        foreach (RoomInfo room in roomList)
+        {
+            if (room.RemovedFromList == false)
+            {
+                ui.AddRoomObj(room, (id, roomPassword) => OnEnterRoom(id, roomPassword));
+            }
+        }
+    }
+
     public void OnClickSearch()
     {
         // 검색창에 입력된 단어를 토대로 방 검색
         string keyword = ui.GetSearchKeyword();
 
         SearchRoom(keyword);
+    }
+
+    public void OnClickSearchByCode()
+    {
+        string keyword = searchCodeField.text;
+        Debug.Log(keyword);
+        SearchRoomByCode(keyword);
     }
 
     private void SearchRoom(string keyword)
@@ -122,6 +162,41 @@ public class MultiRoomManager : MonoBehaviourPunCallbacks
                 ui.AddRoomObj(room, (id, roomPassword) => OnEnterRoom(id, roomPassword));
             }
         }
+    }
+
+    private void SearchRoomByCode(string keyword)       //코드 검색으로 인한 방 진입
+    {
+        bool found = false;  // 일치하는 코드를 발견했는지 여부를 추적
+
+        foreach (string code in cachedRoomList.Keys)
+        {
+            Debug.Log(code);
+            // 키워드가 코드와 같을 시
+            if (code.Equals(keyword))
+            {
+
+                OnEnterRoom(code);
+                found = true;  // 발견했음을 표시
+                break;  // 더 이상 반복하지 않고 종료
+            }
+        }
+
+        // 일치하는 코드를 찾지 못한 경우
+        if (!found)
+        {
+            ShowText();
+            Invoke("HideText", 3f);
+        }
+    }
+
+    void ShowText()
+    {
+        messageText.gameObject.SetActive(true);
+    }
+
+    void HideText()
+    {
+        messageText.gameObject.SetActive(false);
     }
 
     /***************************************************************
